@@ -1,3 +1,4 @@
+import re
 import requests
 import json
 import threading
@@ -5,8 +6,10 @@ from pathlib import Path
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-SGLANG_URL = "http://129.105.69.10:30000/v1/chat/completions"
+SGLANG_URL = "http://129.105.69.10:3000/v1/chat/completions"
 MODEL = "Qwen/Qwen2.5-32B-Instruct-AWQ"
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)```")
 
 
 class QAGenerator:
@@ -14,6 +17,7 @@ class QAGenerator:
     def __init__(self, input_path, output_path, workers=8):
         self.in_path = Path(input_path)
         self.out_path = Path(output_path)
+        self.failed_path = self.out_path.with_name("failed_ids.txt")
         self.workers = workers
         self._lock = threading.Lock()
 
@@ -39,46 +43,71 @@ Rules:
   {{"question": "...", "answer": "...", "relevant_excerpt": "..."}}
 ]"""
 
+    def _parse_response(self, text):
+        # Strip markdown fences if the model wrapped the JSON
+        match = _FENCE_RE.search(text)
+        if match:
+            text = match.group(1)
+        return json.loads(text.strip())
+
     def generate_qa(self, paper):
         payload = {
             "model": MODEL,
             "messages": [{"role": "user", "content": self._build_prompt(paper)}],
             "temperature": 0.3,
+            "max_tokens": 1024,
         }
         try:
             response = requests.post(SGLANG_URL, json=payload, timeout=120)
             text = response.json()["choices"][0]["message"]["content"]
-            return json.loads(text)
-        except Exception:
-            return []
+            return self._parse_response(text), None
+        except Exception as e:
+            return [], str(e)
 
     def run(self):
-        existing_ids = set()
         self.out_path.parent.mkdir(parents=True, exist_ok=True)
 
+        successful_ids = set()
         if self.out_path.exists():
-            with open(self.out_path, "r") as f:
+            with open(self.out_path) as f:
                 for line in f:
-                    existing_ids.add(json.loads(line)["paper_id"])
+                    successful_ids.add(json.loads(line)["paper_id"])
 
-        with open(self.in_path, "r") as infile:
-            papers = [json.loads(line) for line in infile]
+        failed_ids = set()
+        if self.failed_path.exists():
+            with open(self.failed_path) as f:
+                for line in f:
+                    pid = line.strip()
+                    if pid:
+                        failed_ids.add(pid)
 
-        papers_to_process = [p for p in papers if p["id"] not in existing_ids]
-        print(f"Processing {len(papers_to_process)} papers ({len(existing_ids)} already done)")
+        already_attempted = successful_ids | failed_ids
 
-        with open(self.out_path, "a") as outfile:
+        with open(self.in_path) as f:
+            papers = [json.loads(line) for line in f]
+
+        papers_to_process = [p for p in papers if p["id"] not in already_attempted]
+        print(
+            f"Total: {len(papers)} | Done: {len(successful_ids)} | "
+            f"Failed: {len(failed_ids)} | To process: {len(papers_to_process)}"
+        )
+
+        with open(self.out_path, "a") as outfile, open(self.failed_path, "a") as failfile:
             with ThreadPoolExecutor(max_workers=self.workers) as executor:
                 futures = {executor.submit(self.generate_qa, paper): paper
                            for paper in papers_to_process}
                 for future in tqdm(as_completed(futures), total=len(futures)):
                     paper = futures[future]
-                    pairs = future.result()
+                    pairs, err = future.result()
                     with self._lock:
-                        for pair in pairs:
-                            pair["paper_id"] = paper["id"]
-                            outfile.write(json.dumps(pair) + "\n")
-                        outfile.flush()
+                        if pairs:
+                            for pair in pairs:
+                                pair["paper_id"] = paper["id"]
+                                outfile.write(json.dumps(pair) + "\n")
+                            outfile.flush()
+                        else:
+                            failfile.write(paper["id"] + "\n")
+                            failfile.flush()
 
 
 if __name__ == "__main__":
