@@ -12,7 +12,7 @@ class TokenEmbedding(nn.Module):
 
 class PositionalEncoding(nn.Module):
 
-    def __init__(self, d_model, max_len=256):
+    def __init__(self, d_model, max_len=512):
         super().__init__()
         positions = torch.arange(max_len).unsqueeze(1)
         depths = torch.arange(0, d_model, 2).float() / d_model
@@ -30,7 +30,7 @@ class PositionalEncoding(nn.Module):
 
 class Embeddings(nn.Module):
 
-    def __init__(self, vocab_size, d_model, dropout=0.1, max_len=256):
+    def __init__(self, vocab_size, d_model, dropout=0.1, max_len=512):
         super().__init__()
         self.token_emb = TokenEmbedding(vocab_size, d_model)
         self.pos_enc   = PositionalEncoding(d_model, max_len)

@@ -1,21 +1,17 @@
 import json
 import torch
-from pathlib import Path
 from torch.utils.data import Dataset
-from tokenizers import ByteLevelBPETokenizer
 
 PAD_ID = 0
 SOS_ID = 1
 EOS_ID = 2
-UNK_ID = 3
 SEP_ID = 32000
 
 class RoboScholarDataset(Dataset):
 
-    def __init__(self, qa_pairs_path, tokenizer, max_enc_len=256, max_dec_len=128):
+    def __init__(self, qa_pairs_path, tokenizer, max_len=512):
         self.tokenizer = tokenizer
-        self.max_enc_len = max_enc_len
-        self.max_dec_len = max_dec_len
+        self.max_len = max_len
         self.data = []
         with open(qa_pairs_path) as f:
             for line in f:
@@ -23,35 +19,32 @@ class RoboScholarDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
-    
+
     def __getitem__(self, index):
         row = self.data[index]
-        question_ids = self.tokenizer.encode(row["question"]).ids
         context_ids  = self.tokenizer.encode(row["relevant_excerpt"]).ids
+        question_ids = self.tokenizer.encode(row["question"]).ids
         answer_ids   = self.tokenizer.encode(row["answer"]).ids
 
-        encoder_ids = [SOS_ID] + question_ids + [SEP_ID] + context_ids + [EOS_ID]
-        decoder_input_ids = [SOS_ID] + answer_ids
-        decoder_output_ids = answer_ids + [EOS_ID]
+        input_ids = [SOS_ID] + context_ids + [SEP_ID] + question_ids + [SEP_ID] + answer_ids + [EOS_ID]
 
-        encoder_ids = encoder_ids[:self.max_enc_len]
-        decoder_input = decoder_input_ids[:self.max_dec_len]
-        decoder_output = decoder_output_ids[:self.max_dec_len]
+        prefix_len = 1 + len(context_ids) + 1 + len(question_ids) + 1
+        input_ids = input_ids[:self.max_len]
+        prefix_len = min(prefix_len, self.max_len)
 
-        enc_pad_len = self.max_enc_len - len(encoder_ids)
-        dec_pad_len = self.max_dec_len - len(decoder_input)
+        pad_len = self.max_len - len(input_ids)
+        input_ids = input_ids + [PAD_ID] * pad_len
 
-        encoder_ids    = encoder_ids    + [PAD_ID] * enc_pad_len
-        decoder_input  = decoder_input  + [PAD_ID] * dec_pad_len
-        decoder_output = decoder_output + [PAD_ID] * dec_pad_len
+        target_ids = [-100] * self.max_len
+        ans_start = prefix_len - 1
+        ans_end = min(prefix_len + len(answer_ids), self.max_len)
+        for i in range(ans_start, ans_end):
+            target_ids[i] = input_ids[i + 1]
 
-        enc_mask = [1] * (self.max_enc_len - enc_pad_len) + [0] * enc_pad_len
-        dec_mask = [1] * (self.max_dec_len - dec_pad_len) + [0] * dec_pad_len
+        mask = [1] * (self.max_len - pad_len) + [0] * pad_len
 
         return {
-            "encoder_ids":    torch.tensor(encoder_ids,    dtype=torch.long),
-            "enc_mask":       torch.tensor(enc_mask,       dtype=torch.long),
-            "decoder_input":  torch.tensor(decoder_input,  dtype=torch.long),
-            "decoder_output": torch.tensor(decoder_output, dtype=torch.long),
-            "dec_mask":       torch.tensor(dec_mask,       dtype=torch.long),
+            "input_ids":  torch.tensor(input_ids,  dtype=torch.long),
+            "target_ids": torch.tensor(target_ids, dtype=torch.long),
+            "mask":       torch.tensor(mask,        dtype=torch.long),
         }
