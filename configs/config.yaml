@@ -17,6 +17,8 @@ paths:
   tokenizer_vocab: data/tokenizer/vocab.json
   tokenizer_merges: data/tokenizer/merges.txt
   checkpoint_dir: checkpoints/
+  checkpoint: checkpoints/checkpoint_epoch_8.pt
+  vector_store: data/vector_store
 
 wandb:
   project: roboscolar

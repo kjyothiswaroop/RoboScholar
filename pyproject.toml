@@ -26,6 +26,7 @@ dependencies = [
     "PyMuPDF>=1.23.0",
     "pydantic>=2.0.0",
     "rich>=13.0.0",
+    "gradio>=4.0.0",
 ]
 
 [project.optional-dependencies]
