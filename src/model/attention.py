@@ -27,6 +27,10 @@ class MultiHeadAttention(nn.Module):
         scores = Q @ K.transpose(-2, -1) / (self.d_k ** 0.5)
 
         if mask is not None:
+            if mask.dim() == 2:
+                mask = mask.unsqueeze(0).unsqueeze(0)  # (1, 1, seq_len, seq_len)
+            elif mask.dim() == 3:
+                mask = mask.unsqueeze(1)               # (batch, 1, seq_len, seq_len)
             scores = scores.masked_fill(mask == 0, float('-inf'))
 
         weights = torch.softmax(scores, dim=-1).nan_to_num(0.0)

@@ -1,0 +1,22 @@
+model:
+  vocab_size: 32001
+  d_model: 512
+  num_heads: 8
+  num_layers: 6
+  dropout: 0.1
+  max_len: 512
+
+training:
+  batch_size: 32
+  learning_rate: 3e-4
+  num_epochs: 20
+  val_split: 0.1
+
+paths:
+  qa_pairs: data/qa_pairs/qa_pairs.jsonl
+  tokenizer_vocab: data/tokenizer/vocab.json
+  tokenizer_merges: data/tokenizer/merges.txt
+  checkpoint_dir: checkpoints/
+
+wandb:
+  project: roboscolar
