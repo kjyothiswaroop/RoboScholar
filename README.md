@@ -12,7 +12,7 @@ uv sync
 source .venv/bin/activate
 
 # 2. Download the trained model checkpoint from HuggingFace Hub
-hf download <username>/roboscholar-checkpoint checkpoint_epoch_8.pt --local-dir checkpoints/
+hf download kjswaroopNU/RoboScholar checkpoint_epoch_8.pt --local-dir checkpoints/
 
 # 3. Launch the app
 python src/app.py
